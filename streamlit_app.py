@@ -9,8 +9,9 @@ st.title("Aplikasi Clustering K-Means dari GitHub RAW CSV")
 # ============================================
 # 1. LOAD CSV OTOMATIS DARI GITHUB
 # ============================================
-csv_url = "https://github.com/febibtr/UAS/blob/main/wine-clustering.csv" 
-df = pd.read_csv(csv_url)
+import pandas as pd
+df = pd.read_csv("https://raw.githubusercontent.com/febibtr/UAS/refs/heads/main/wine-clustering.csv", sep=None, engine="python")
+print(df.head())
 
 st.write("Dataset berhasil dimuat:")
 st.dataframe(df)
