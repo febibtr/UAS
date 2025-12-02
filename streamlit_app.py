@@ -1,68 +1,80 @@
+import streamlit as st
 import pandas as pd
 from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 
-# ============================
-# 1. LOAD DATA CSV (langsung)
-# ============================
-path_csv = "data_saya.csv"     # ← ganti sesuai lokasi file Anda
-df = pd.read_csv(path_csv)
-
-print("Data Loaded:")
-print(df.head())
+st.title("Aplikasi Clustering K-Means")
+st.write("Upload dataset CSV untuk dilakukan clustering.")
 
 # ============================================
-# 2. PILIH KOLOM YANG MAU DI-CLUSTERING
+# 1. UPLOAD FILE CSV
 # ============================================
-# Misalnya hanya kolom numerik
-numerical_cols = df.select_dtypes(include=['int64', 'float64']).columns.tolist()
-print("\nKolom yang digunakan untuk clustering:", numerical_cols)
+uploaded_file = st.file_uploader("Upload file CSV", type=["csv"])
 
-data = df[numerical_cols]
+if uploaded_file is not None:
+    df = pd.read_csv(uploaded_file)
+    st.write("Data berhasil dimuat:")
+    st.dataframe(df)
 
-# =====================================
-# 3. NORMALISASI DATA (sangat penting)
-# =====================================
-scaler = StandardScaler()
-scaled_data = scaler.fit_transform(data)
+    # ============================================
+    # 2. PILIH KOLOM NUMERIK UNTUK CLUSTERING
+    # ============================================
+    numerical_cols = df.select_dtypes(include=["int64", "float64"]).columns.tolist()
 
-# =====================================
-# 4. MENENTUKAN JUMLAH CLUSTER (ELBOW)
-# =====================================
-sse = []
-K = range(1, 11)
+    if len(numerical_cols) < 2:
+        st.warning("Dataset harus memiliki minimal 2 kolom numerik untuk clustering.")
+    else:
+        st.write("Kolom numerik yang tersedia:", numerical_cols)
 
-for k in K:
-    kmeans = KMeans(n_clusters=k, random_state=42)
-    kmeans.fit(scaled_data)
-    sse.append(kmeans.inertia_)
+        data = df[numerical_cols]
 
-plt.figure(figsize=(7,5))
-plt.plot(K, sse, 'o-')
-plt.title("Metode Elbow")
-plt.xlabel("Jumlah Cluster (k)")
-plt.ylabel("SSE / Inertia")
-plt.grid(True)
-plt.show()
+        # =====================================
+        # 3. NORMALISASI DATA
+        # =====================================
+        scaler = StandardScaler()
+        scaled_data = scaler.fit_transform(data)
 
-# =====================================================
-# 5. K-MEANS CLUSTERING (misal pilih 3 cluster)
-# =====================================================
-k = 3
-kmeans = KMeans(n_clusters=k, random_state=42)
-df['Cluster'] = kmeans.fit_predict(scaled_data)
+        # =====================================
+        # 4. ELBOW METHOD
+        # =====================================
+        st.subheader("Elbow Method")
+        sse = []
+        K = range(1, 11)
 
-print("\nHasil Clustering:")
-print(df[['Cluster'] + numerical_cols].head())
+        for k in K:
+            kmeans = KMeans(n_clusters=k, random_state=42)
+            kmeans.fit(scaled_data)
+            sse.append(kmeans.inertia_)
 
-# =====================================================
-# 6. VISUALISASI CLUSTER (jika fitur >= 2)
-# =====================================================
-if len(numerical_cols) >= 2:
-    plt.figure(figsize=(7,5))
-    plt.scatter(scaled_data[:, 0], scaled_data[:, 1], c=df['Cluster'], s=50)
-    plt.title("Visualisasi Clustering (2 Fitur Pertama)")
-    plt.xlabel(numerical_cols[0])
-    plt.ylabel(numerical_cols[1])
-    plt.show()
+        fig, ax = plt.subplots()
+        ax.plot(K, sse, marker='o')
+        ax.set_xlabel("Jumlah Cluster (k)")
+        ax.set_ylabel("SSE")
+        ax.set_title("Elbow Method")
+        st.pyplot(fig)
+
+        # =====================================
+        # 5. PILIH JUMLAH CLUSTER
+        # =====================================
+        st.subheader("Clustering")
+        k = st.slider("Pilih jumlah cluster:", 2, 10, 3)
+
+        kmeans = KMeans(n_clusters=k, random_state=42)
+        df["Cluster"] = kmeans.fit_predict(scaled_data)
+
+        st.write("Hasil Clustering:")
+        st.dataframe(df)
+
+        # =====================================
+        # 6. VISUALISASI CLUSTER
+        # =====================================
+        if len(numerical_cols) >= 2:
+            fig2, ax2 = plt.subplots()
+            ax2.scatter(scaled_data[:, 0], scaled_data[:, 1], c=df["Cluster"], cmap="viridis")
+            ax2.set_xlabel(numerical_cols[0])
+            ax2.set_ylabel(numerical_cols[1])
+            ax2.set_title("Visualisasi Cluster (2 fitur pertama)")
+            st.pyplot(fig2)
+else:
+    st.info("Silakan upload file CSV untuk memulai.")
