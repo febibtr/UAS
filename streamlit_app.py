@@ -1,177 +1,178 @@
-
+# streamlit_app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import LabelEncoder, StandardScaler
-from sklearn.metrics import accuracy_score, confusion_matrix
 from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 from sklearn.decomposition import PCA
-from sklearn.neighbors import NearestNeighbors
 import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="Penguins: CBR / Classification / Clustering", layout="wide")
+st.set_page_config(page_title="Wine Clustering DSS", layout="wide")
 
-st.title("Penguins: CBR, Classification, and Clustering — Streamlit App")
-st.markdown("""
-Implementasi 3 metode:
-- **Classification**: Random Forest untuk memprediksi `species`.
-- **Clustering**: KMeans untuk menemukan kelompok.
-- **Case-Based Reasoning (CBR)**: k-NN retrieval untuk menampilkan kasus paling mirip.
+st.title("🍷 Sistem Pendukung Keputusan — Wine Clustering")
+st.write("""
+Aplikasi ini melakukan **Clustering (K-Means)** pada dataset wine dan memberikan rekomendasi berdasarkan 
+cluster yang terbentuk. Anda dapat upload dataset atau menggunakan dataset default `wine-clustering.csv`.
 """)
 
-# Load data (default: uploaded file or built-in penguins.csv)
-@st.cache_data
-def load_data(file):
-    df = pd.read_csv(file)
-    return df
+# =======================
+# UPLOAD ATAU GUNAKAN DEFAULT
+# =======================
+uploaded = st.sidebar.file_uploader("Upload dataset wine (.csv)", type=["csv"])
+default_path = "/mnt/data/wine-clustering.csv"
 
-uploaded = st.sidebar.file_uploader("Upload CSV (penguins.csv recommended)", type=["csv"])
-default_path = "/mnt/data/penguins.csv"
-data_file = uploaded if uploaded is not None else default_path
+if uploaded:
+    df = pd.read_csv(uploaded)
+    st.sidebar.success("Dataset berhasil diupload.")
+else:
+    try:
+        df = pd.read_csv(default_path)
+        st.sidebar.info("Menggunakan dataset default: wine-clustering.csv")
+    except:
+        st.error("Tidak ada file default. Silakan upload CSV.")
+        st.stop()
 
-try:
-    df = load_data(data_file)
-except Exception as e:
-    st.error(f"Gagal memuat data: {e}")
+# =======================
+# PREVIEW DATASET
+# =======================
+st.subheader("Preview Dataset")
+st.dataframe(df.head())
+
+# Pilih hanya kolom numerik
+numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+
+if len(numeric_cols) == 0:
+    st.error("Dataset tidak memiliki kolom numerik untuk clustering.")
     st.stop()
 
-st.sidebar.write("Dataset preview")
-st.sidebar.dataframe(df.head())
+st.write("Kolom numerik yang digunakan:", numeric_cols)
 
-# Basic preprocessing
-def preprocess(df, dropna=True):
-    df = df.copy()
-    # Keep commonly used numeric features
-    features = ['bill_length_mm', 'bill_depth_mm', 'flipper_length_mm', 'body_mass_g', 'sex', 'island']
-    # Some penguins datasets have slightly different names; try to select what's available
-    available = [c for c in features if c in df.columns]
-    # For classification we need species
-    if 'species' in df.columns:
-        available_with_target = available + ['species']
-    else:
-        available_with_target = available
-    df = df[[c for c in available_with_target if c in df.columns]]
-    if dropna:
-        df = df.dropna().reset_index(drop=True)
-    # Encode categorical
-    le_sex = LabelEncoder()
-    le_island = LabelEncoder()
-    encoders = {}
-    if 'sex' in df.columns:
-        df['sex_enc'] = le_sex.fit_transform(df['sex'].astype(str))
-        encoders['sex'] = le_sex
-    if 'island' in df.columns:
-        df['island_enc'] = le_island.fit_transform(df['island'].astype(str))
-        encoders['island'] = le_island
-    return df, encoders
+# =======================
+# PERSIAPAN DATA
+# =======================
+data = df[numeric_cols].fillna(df[numeric_cols].mean())
 
-df_clean, encoders = preprocess(df, dropna=True)
-st.write(f"Loaded {len(df)} rows — after dropna: {len(df_clean)} rows")
-st.dataframe(df_clean.head())
+scaler = StandardScaler()
+scaled = scaler.fit_transform(data)
 
-mode = st.sidebar.selectbox("Pilih mode", ["Classification", "Clustering", "Case-Based Reasoning (CBR)"])
+# =======================
+# ELBOW METHOD
+# =======================
+st.sidebar.subheader("Elbow Method")
+do_elbow = st.sidebar.checkbox("Tampilkan Elbow Method", value=True)
 
-numeric_features = [c for c in df_clean.columns if df_clean[c].dtype in [np.float64, np.int64]]
-# Keep only columns that are meaningful
-feature_cols = [c for c in numeric_features if c not in ['species']]
+if do_elbow:
+    max_k = st.sidebar.slider("Max k", 2, 12, 8)
+    inertias = []
+    ks = range(1, max_k+1)
 
-if mode == "Classification":
-    st.header("Classification — Predict `species`")
-    if 'species' not in df_clean.columns:
-        st.error("Kolom `species` tidak ditemukan dalam dataset. Classification tidak tersedia.")
-    else:
-        X = df_clean[feature_cols]
-        y = df_clean['species']
-        # Encode target
-        le_target = LabelEncoder()
-        y_enc = le_target.fit_transform(y)
-        X_train, X_test, y_train, y_test = train_test_split(X, y_enc, test_size=0.25, random_state=42, stratify=y_enc)
-        scaler = StandardScaler()
-        X_train_s = scaler.fit_transform(X_train)
-        X_test_s = scaler.transform(X_test)
-        clf = RandomForestClassifier(n_estimators=100, random_state=42)
-        clf.fit(X_train_s, y_train)
-        y_pred = clf.predict(X_test_s)
-        acc = accuracy_score(y_test, y_pred)
-        st.write(f"Model: RandomForest — Accuracy (test): **{acc:.3f}**")
-        cm = confusion_matrix(y_test, y_pred)
-        st.write("Confusion matrix (rows=true, cols=pred):")
-        st.write(pd.DataFrame(cm, index=le_target.classes_, columns=le_target.classes_))
-        # User input for prediction
-        st.subheader("Predict a custom penguin")
-        input_vals = {}
-        for col in feature_cols:
-            mn = float(df_clean[col].min())
-            mx = float(df_clean[col].max())
-            mean = float(df_clean[col].mean())
-            input_vals[col] = st.sidebar.slider(col, mn, mx, mean)
-        inp = np.array([input_vals[c] for c in feature_cols]).reshape(1, -1)
-        inp_s = scaler.transform(inp)
-        pred = clf.predict(inp_s)[0]
-        pred_proba = clf.predict_proba(inp_s)[0]
-        st.write("Predicted species:", le_target.inverse_transform([pred])[0])
-        proba_df = pd.DataFrame([pred_proba], columns=le_target.classes_)
-        st.write("Probabilities:")
-        st.dataframe(proba_df.T)
+    for k in ks:
+        km = KMeans(n_clusters=k, random_state=42, n_init=10)
+        km.fit(scaled)
+        inertias.append(km.inertia_)
 
-elif mode == "Clustering":
-    st.header("Clustering — KMeans")
-    st.write("KMeans clustering on numeric features.")
-    X = df_clean[feature_cols].copy()
-    scaler = StandardScaler()
-    X_s = scaler.fit_transform(X)
-    k = st.sidebar.slider("Number of clusters (k)", 2, 6, 3)
-    kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-    labels = kmeans.fit_predict(X_s)
-    st.write(f"Assigned clusters (k={k})")
-    df_clean['cluster'] = labels
-    st.dataframe(df_clean[[*feature_cols, 'cluster']].head(10))
-    # PCA scatter
-    pca = PCA(n_components=2)
-    X_p = pca.fit_transform(X_s)
     fig, ax = plt.subplots()
-    ax.scatter(X_p[:,0], X_p[:,1], c=labels)
-    ax.set_title("PCA projection of clusters")
+    ax.plot(ks, inertias, marker="o")
+    ax.set_title("Elbow Method (SSE vs k)")
+    ax.set_xlabel("k")
+    ax.set_ylabel("Inertia (SSE)")
     st.pyplot(fig)
 
-    st.subheader("Cluster centers (inverse scaled)")
-    centers = scaler.inverse_transform(kmeans.cluster_centers_)
-    centers_df = pd.DataFrame(centers, columns=feature_cols)
-    st.dataframe(centers_df)
+# =======================
+# K-MEANS CLUSTERING
+# =======================
+st.sidebar.subheader("Clustering")
+k = st.sidebar.slider("Jumlah cluster (k)", 2, 8, 3)
 
-elif mode.startswith("Case-Based"):
-    st.header("Case-Based Reasoning (CBR) — k-NN retrieval")
-    st.write("Find the k most similar penguins to a query case (using Euclidean on numeric features).")
-    X = df_clean[feature_cols].copy()
-    scaler = StandardScaler()
-    X_s = scaler.fit_transform(X)
-    nbrs = NearestNeighbors(n_neighbors=5, algorithm='auto').fit(X_s)
-    # user input case
-    st.subheader("Query case (use sidebar)")
-    query_vals = {}
-    for col in feature_cols:
-        mn = float(df_clean[col].min())
-        mx = float(df_clean[col].max())
-        mean = float(df_clean[col].mean())
-        query_vals[col] = st.sidebar.slider(f"Query — {col}", mn, mx, mean)
-    q = np.array([query_vals[c] for c in feature_cols]).reshape(1, -1)
-    q_s = scaler.transform(q)
-    dists, idxs = nbrs.kneighbors(q_s, n_neighbors=st.sidebar.slider("k (neighbors)", 1, 10, 5))
-    st.write("Closest cases (distance, index):")
-    res = []
-    for dist, idx in zip(dists[0], idxs[0]):
-        row = df_clean.iloc[idx].to_dict()
-        row['_dist'] = float(dist)
-        res.append(row)
-    st.dataframe(pd.DataFrame(res))
+km = KMeans(n_clusters=k, random_state=42, n_init=10)
+labels = km.fit_predict(scaled)
 
-st.sidebar.markdown("---")
-st.sidebar.write("Deployment:")
-st.sidebar.markdown("""
-To deploy this app publicly:
-1. Install dependencies (requirements.txt).
-2. Run `streamlit run streamlit_app.py`.
-3. Use Streamlit Cloud, Heroku, or any VM to host the app.
-""")
+df["cluster"] = labels
+
+st.subheader("Hasil Clustering")
+st.dataframe(df.head())
+
+# =======================
+# CLUSTER SUMMARY
+# =======================
+st.subheader("Ringkasan Cluster")
+cluster_summary = df.groupby("cluster")[numeric_cols].mean()
+st.dataframe(cluster_summary)
+
+# =======================
+# VISUALISASI PCA
+# =======================
+st.subheader("Visualisasi PCA (2D)")
+
+pca = PCA(n_components=2)
+pca_result = pca.fit_transform(scaled)
+
+fig2, ax2 = plt.subplots(figsize=(8,6))
+scatter = ax2.scatter(pca_result[:,0], pca_result[:,1], c=labels, cmap='tab10')
+ax2.set_title("PCA Visualization")
+ax2.set_xlabel("PCA 1")
+ax2.set_ylabel("PCA 2")
+
+handles, _ = scatter.legend_elements()
+ax2.legend(handles, [f"Cluster {i}" for i in range(k)])
+st.pyplot(fig2)
+
+# =======================
+# INTERPRETASI CLUSTER
+# =======================
+st.subheader("Interpretasi Cluster")
+
+target_feature = numeric_cols[0]  # contoh: alcohol
+
+order = cluster_summary[target_feature].sort_values().index
+
+interpretation = {}
+for rank, c in enumerate(order):
+    if rank == 0:
+        tag = "rendah"
+    elif rank == len(order)-1:
+        tag = "tinggi"
+    else:
+        tag = "sedang"
+
+    interpretation[c] = f"Cluster {c} → nilai {target_feature} {tag}"
+
+for i in range(k):
+    st.write(interpretation[i])
+
+# =======================
+# SISTEM PENDUKUNG KEPUTUSAN (REKOMENDASI)
+# =======================
+st.subheader("🟢 Sistem Rekomendasi (SPK)")
+
+st.write("Masukkan nilai fitur untuk menentukan cluster:")
+
+input_values = []
+for col in numeric_cols:
+    val = st.number_input(col, float(df[col].min()), float(df[col].max()), float(df[col].mean()))
+    input_values.append(val)
+
+if st.button("Prediksi Cluster Kasus Baru"):
+    arr = np.array(input_values).reshape(1, -1)
+    arr_scaled = scaler.transform(arr)
+    predicted_cluster = km.predict(arr_scaled)[0]
+
+    st.success(f"Kasus baru masuk **Cluster {predicted_cluster}**")
+    st.write("Interpretasi:", interpretation[predicted_cluster])
+
+    # rekomendasi sederhana SPK
+    st.write("Rekomendasi:")
+    if target_feature:
+        val = arr[0][numeric_cols.index(target_feature)]
+        mean_feature = df.groupby("cluster")[target_feature].mean()[predicted_cluster]
+
+        if val > mean_feature:
+            st.write("• Nilai lebih tinggi dari rata-rata cluster → cocok untuk kategori premium.")
+        else:
+            st.write("• Nilai lebih rendah → cocok untuk kategori standard atau ekonomis.")
+
+# =======================
+# DOWNLOAD HASIL
+# =======================
+csv = df.to_csv(index=False).encode('utf-8')
+st.download_button("Download Hasil Cluster (CSV)", csv, "wine_clustered.csv", "text/csv")
