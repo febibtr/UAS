@@ -4,7 +4,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 import matplotlib.pyplot as plt
 
-st.title("Aplikasi Clustering K-Means dari GitHub RAW CSV")
+st.title("Clustering Wine")
 
 # ============================================
 # 1. LOAD CSV OTOMATIS DARI GITHUB
